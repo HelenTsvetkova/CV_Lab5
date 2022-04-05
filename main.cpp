@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
 {
 
     // lab part!!!!!1
-    int labCurrentPart = CALIBRATE_CAMERA;
+    int labCurrentPart = DETECT_MARKER;
 
     // params
     int markersX = 5;
@@ -36,8 +36,6 @@ int main(int argc, char* argv[])
     int margins = markerSeparation;
     int dictionaryName = cv::aruco::DICT_6X6_250;
     cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(dictionaryName);
-
-    cv::Mat cameraMatrix, distCoeffs;
 
     switch (labCurrentPart) {
     case GENERATE_MARKER:
@@ -57,89 +55,72 @@ int main(int argc, char* argv[])
 
     case CALIBRATE_CAMERA:
     {
-        // мировые координаты точек маркеров на доске
-        std::vector<cv::Point3f> objPointsBuf (markersX * markersY * 4);
-        int markerNum = markersX * markersY * 4;
-        for(int j = 0; j < markersY; j++) {
-            for(int i = 0; i < markersX; i++) {
-                markerNum -= 4;
-                objPointsBuf[markerNum] = cv::Point3f(margins*(i+1) + markerLength*i, margins*(j+1) + markerLength*j, 0);
-                objPointsBuf[markerNum + 1] = cv::Point3f(margins*(i+1) + markerLength*(i+1), margins*(j+1) + markerLength*j, 0);
-                objPointsBuf[markerNum + 2] = cv::Point3f(margins*(i+1) + markerLength*(i+1), margins*(j+1) + markerLength*(j+1), 0);
-                objPointsBuf[markerNum + 3] = cv::Point3f(margins*(i+1) + markerLength*i, margins*(j+1) + markerLength*(j+1), 0);
+
+        // данные для калибровки
+        cv::Mat cameraMatrix, distCoeffs;
+        std::vector<std::vector<cv::Point3f>> calibObjPoints;
+        std::vector<std::vector<cv::Point2f>> calibImgPoints;
+        cv::Size calibImgSize;
+        cv::Size calibBoardSize(9, 6);
+        float gridSize = 27;
+
+        std::vector<cv::Point3f> objPointsBuf;
+        for(size_t y = 0; y < calibBoardSize.height; y++) {
+            for(size_t x = 0; x < calibBoardSize.width; x++) {
+                objPointsBuf.push_back(cv::Point3f(x * gridSize, y * gridSize, 0.));
             }
         }
 
-        // массивы для калибровки
-        std::vector<std::vector<cv::Point3f>> calibObjPoints;
-        std::vector<std::vector<cv::Point2f>> calibImgPoints;
-        cv::Size calibSize;
-
         // открываем видео
-        cv::VideoCapture markersVideo("../images/markersVideo.mp4");
-        if(!markersVideo.isOpened()){
-            std::cout << "Error opening video markersVideo.mp4." << endl;
+        cv::VideoCapture chessboardVideo(0);
+        if(!chessboardVideo.isOpened()){
+            std::cout << "Error opening video." << endl;
             return 0;
         }
-        cv::Mat markersImage;
-        markersVideo >> markersImage;
-        calibSize = markersImage.size();
+        cv::Mat chessboardImage;
+        chessboardVideo >> chessboardImage;
+        calibImgSize = chessboardImage.size();
 
 
         while(1) {
 
-            markersVideo >> markersImage;
-            if (markersImage.empty()) {
+            chessboardVideo >> chessboardImage;
+            if (chessboardImage.empty()) {
                 break;
             }
 
-            // детектируем маркеры
-            std::vector<int> markerIds;
-            std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
-            cv::Ptr<cv::aruco::DetectorParameters> parameters = cv::aruco::DetectorParameters::create();
-            cv::aruco::detectMarkers(markersImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
-
-            // отрисовка детектированных маркеров
-            cv::Mat showImage;
-            showImage = markersImage.clone();
-            if(markerIds.size() > 0) {
-                cv::aruco::drawDetectedMarkers(showImage, markerCorners, markerIds);
-            }
-
-            // если детектированы все маркеры - сохраняем результат для дальнейшей калибровки
-            if(markerIds.size() == markersX * markersY) {
-                std::vector<cv::Point2f> imgPointsBuf;
-                for(size_t i = 0; i < markerCorners.size(); i++) {
-                    imgPointsBuf.push_back(markerCorners[i][0]);
-                    imgPointsBuf.push_back(markerCorners[i][1]);
-                    imgPointsBuf.push_back(markerCorners[i][2]);
-                    imgPointsBuf.push_back(markerCorners[i][3]);
-                }
-                calibImgPoints.push_back(imgPointsBuf);
+            std::vector<cv::Point2f> cornersBuf;
+            bool found = cv::findChessboardCorners(chessboardImage, calibBoardSize, cornersBuf);
+            cv::Mat showImage = chessboardImage.clone();
+            if(found) {
+                cv::drawChessboardCorners(showImage, calibBoardSize, cornersBuf, found);
+                calibImgPoints.push_back(cornersBuf);
                 calibObjPoints.push_back(objPointsBuf);
             }
 
             cv::imshow( "Markers", showImage );
-            char c = (char)cv::waitKey(25);
+            char c = (char)cv::waitKey(200);
             if(c == 27) {
                 break;
             }
         }
 
+        std::cout << "Num of photoes : " << calibImgPoints.size() << std::endl;
         std::vector<cv::Mat> rvecs, tvecs;
-        cv::calibrateCamera(calibObjPoints, calibImgPoints, calibSize, cameraMatrix, distCoeffs, rvecs, tvecs);
+        cv::calibrateCamera(calibObjPoints, calibImgPoints, calibImgSize, cameraMatrix, distCoeffs, rvecs, tvecs);
 
         // проверка калибровки камеры
-        std::cout << "imageSize : " << calibSize << std::endl;
+        std::cout << "imageSize : " << calibImgSize << std::endl;
         std::cout << "cameraMatrix : \n" << cameraMatrix << std::endl;
         std::cout << "distCoeffs : \n" << distCoeffs << std::endl;
 
-        markersVideo.release();
+        cv::FileStorage fs("../camera.xml", cv::FileStorage::WRITE);
+        fs << "cameraMatrix" << cameraMatrix;
+        fs << "distCoeffs" << distCoeffs;
+
+        chessboardVideo.release();
         cv::destroyAllWindows();
-        /****************************************************************************************/
-//        break;
-        labCurrentPart = DETECT_MARKER;
-        /****************************************************************************************/
+        break;
     }
 
     case DETECT_MARKER:
@@ -174,17 +155,23 @@ int main(int argc, char* argv[])
         cv::waitKey();
 
         // находим ориентацию маркеров
-        std::vector<cv::Mat> rvecs, tvecs;
+        cv::FileStorage fs("../camera.xml", cv::FileStorage::READ);
+        cv::Mat cameraMatrix, distCoeffs;
+        fs["cameraMatrix"] >> cameraMatrix;
+        fs["distCoeffs"] >> distCoeffs;
+        std::vector<cv::Vec3d> rvecs, tvecs;
         cv::aruco::estimatePoseSingleMarkers(markerCorners, markerLength, cameraMatrix, distCoeffs, rvecs, tvecs);
 
         // проверка ориентации маркеров
         for (int i = 0; i < rvecs.size(); ++i) {
             auto rvec = rvecs[i];
             auto tvec = tvecs[i];
-            cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
+            cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvec, tvec, 15);
+
         }
 
-        cv::imshow(" markers ", outputImage);
+        cv::resize(outputImage, outputImage, cv::Size(), 2, 2);
+        cv::imshow("estimated ", outputImage);
         cv::waitKey();
 
         break;
