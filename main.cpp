@@ -18,14 +18,15 @@ using std::sort;
 enum labPart {
     NONE,
     GENERATE_MARKER,
-    DETECT_MARKER
+    DETECT_MARKER,
+    CALIBRATE_CAMERA
 };
 
 int main(int argc, char* argv[])
 {
 
     // lab part!!!!!1
-    int labCurrentPart = DETECT_MARKER;
+    int labCurrentPart = CALIBRATE_CAMERA;
 
     // params
     int markersX = 5;
@@ -54,6 +55,8 @@ int main(int argc, char* argv[])
 
     case DETECT_MARKER:
     {
+
+        // входное изображение
         if(argc == 1) {
             std::cout << "Please enter input photo file path" << std::endl;
             return 0;
@@ -65,43 +68,73 @@ int main(int argc, char* argv[])
             std::cout << "Error with input image" << std::endl;
             return 0;
         }
+
+        // детектируем маркеры
         std::vector<int> markerIds;
         std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
         cv::Ptr<cv::aruco::DetectorParameters> parameters = cv::aruco::DetectorParameters::create();
         cv::aruco::detectMarkers(inputImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
 
-        // calibrate camera
-        std::vector<std::vector<cv::Point3f>> markerObjPoints;
-        for(int i = 0; i < markersX; i++) {
-            for(int j = 0; j < markersY; i++) {
-                std::vector<cv::Point3f> buf;
-                buf.push_back(cv::Point3f(margins + (markerLength + markerSeparation)*i, margins + (markerLength + markerSeparation)*j, 0));
-                buf.push_back(cv::Point3f(margins + (markerLength + markerSeparation)*i + markerLength, margins + (markerLength + markerSeparation)*j, 0));
-                buf.push_back(cv::Point3f(margins + (markerLength + markerSeparation)*i + markerLength, margins + (markerLength + markerSeparation)*j + markerLength, 0));
-                buf.push_back(cv::Point3f(margins + (markerLength + markerSeparation)*i, margins + (markerLength + markerSeparation)*j + markerLength, 0));
+        // проверка детектированных маркеров
+        cv::Mat outputImage = inputImage.clone();
 
-                markerObjPoints.push_back(buf);
+        if(markerIds.size() > 0) {
+            cv::aruco::drawDetectedMarkers(outputImage, markerCorners, markerIds);
+        }
+        cv::imshow(" markers ", outputImage);
+        cv::waitKey();
+
+        // калибруем камеру
+        std::vector<std::vector<cv::Point3f>> markerObjPoints (markersX * markersY);
+        int markerNum = markersX * markersY - 1;
+        for(int j = 0; j < markersY; j++) {
+            for(int i = 0; i < markersX; i++) {
+                std::vector<cv::Point3f> buf;
+                buf.push_back(cv::Point3f(margins*(i+1) + markerLength*i, margins*(j+1) + markerLength*j, 0));
+                buf.push_back(cv::Point3f(margins*(i+1) + markerLength*(i+1), margins*(j+1) + markerLength*j, 0));
+                buf.push_back(cv::Point3f(margins*(i+1) + markerLength*(i+1), margins*(j+1) + markerLength*(j+1), 0));
+                buf.push_back(cv::Point3f(margins*(i+1) + markerLength*i, margins*(j+1) + markerLength*(j+1), 0));
+                markerObjPoints[markerNum] = buf;
+                markerNum--;
             }
         }
 
-//        cv::Mat cameraMatrix, distCoeffs;
-//        std::vector<cv::Mat> rvecs, tvecs;
-//        cv::aruco::estimatePoseSingleMarkers(markerCorners, markerLength, cameraMatrix, distCoeffs, rvecs, tvecs);
+        cv::Mat cameraMatrix, distCoeffs;
+        std::vector<cv::Mat> rvecs, tvecs;
+        cv::calibrateCamera(markerObjPoints, markerCorners, inputImage.size(), cameraMatrix, distCoeffs, rvecs, tvecs);
 
-//        cv::Mat outputImage = inputImage.clone();
-//        if(markerIds.size() > 0) {
-//            cv::aruco::drawDetectedMarkers(outputImage, markerCorners, markerIds);
-//        }
+        // проверка калибровки камеры
+        std::cout << "cameraMatrix : \n" << cameraMatrix << std::endl;
+        std::cout << "distCoeffs : \n" << distCoeffs << std::endl;
+        std::vector<cv::Point2f> reprojCorners;
+        for(size_t i = 0; i < markerObjPoints.size(); i++) {
+            cv::projectPoints(markerObjPoints[i], rvecs[i], tvecs[i], cameraMatrix, distCoeffs, reprojCorners);
+            cv::circle(outputImage, reprojCorners[0], 4, cv::Scalar(0,0,255));
+            cv::circle(outputImage, reprojCorners[1], 4, cv::Scalar(0,0,255));
+            cv::circle(outputImage, reprojCorners[2], 4, cv::Scalar(0,0,255));
+            cv::circle(outputImage, reprojCorners[3], 4, cv::Scalar(0,0,255));
+        }
+        cv::imshow(" markers ", outputImage);
+        cv::waitKey();
 
-//        for (int i = 0; i < rvecs.size(); ++i) {
-//            auto rvec = rvecs[i];
-//            auto tvec = tvecs[i];
-//            cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
-//        }
+        // находим ориентацию маркеров
+        cv::aruco::estimatePoseSingleMarkers(markerCorners, markerLength, cameraMatrix, distCoeffs, rvecs, tvecs);
 
-//        cv::imshow(" markers ", outputImage);
-//        cv::waitKey();
+        // проверка ориентации маркеров
+        for (int i = 0; i < rvecs.size(); ++i) {
+            auto rvec = rvecs[i];
+            auto tvec = tvecs[i];
+            cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
+        }
 
+        cv::imshow(" markers ", outputImage);
+        cv::waitKey();
+
+        break;
+    }
+    case CALIBRATE_CAMERA:
+    {
+        inputCapture.open(input);
         break;
     }
     case NONE:
