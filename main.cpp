@@ -22,6 +22,18 @@ enum labPart {
     CALIBRATE_CAMERA
 };
 
+void drawCube(cv::Mat &outputImage, std::vector<cv::Point2f> lowerEdge, std::vector<cv::Point2f> upperEdge) {
+    cv::line(outputImage,lowerEdge[0], upperEdge[0], cv::Scalar(255, 0, 0), 2);
+    cv::line(outputImage,lowerEdge[1], upperEdge[1], cv::Scalar(255, 0, 0), 2);
+    cv::line(outputImage,lowerEdge[2], upperEdge[2], cv::Scalar(255, 0, 0), 2);
+    cv::line(outputImage,lowerEdge[3], upperEdge[3], cv::Scalar(255, 0, 0), 2);
+
+    cv::line(outputImage, upperEdge[0], upperEdge[1], cv::Scalar(0,0,255), 2);
+    cv::line(outputImage, upperEdge[1], upperEdge[2], cv::Scalar(0,0,255), 2);
+    cv::line(outputImage, upperEdge[2], upperEdge[3], cv::Scalar(0,0,255), 2);
+    cv::line(outputImage, upperEdge[3], upperEdge[0], cv::Scalar(0,0,255), 2);
+}
+
 int main(int argc, char* argv[])
 {
 
@@ -36,14 +48,13 @@ int main(int argc, char* argv[])
     int margins = markerSeparation;
     int dictionaryName = cv::aruco::DICT_6X6_250;
     cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(dictionaryName);
+    cv::Ptr<cv::aruco::GridBoard> board = cv::aruco::GridBoard::create(markersX, markersY, markerLength, markerSeparation, dictionary);
+
 
     switch (labCurrentPart) {
     case GENERATE_MARKER:
     {
-        cv::Ptr<cv::aruco::GridBoard> board = cv::aruco::GridBoard::create(
-                    markersX, markersY, markerLength, markerSeparation, dictionary);
-
-        // show created board
+        // show and save created board
         cv::Mat markerImage;
         cv::Size imageSize;
         imageSize.width = markersX * (markerLength + markerSeparation) - markerSeparation + 2 * margins;
@@ -162,12 +173,38 @@ int main(int argc, char* argv[])
         std::vector<cv::Vec3d> rvecs, tvecs;
         cv::aruco::estimatePoseSingleMarkers(markerCorners, markerLength, cameraMatrix, distCoeffs, rvecs, tvecs);
 
-        // проверка ориентации маркеров
-        for (int i = 0; i < rvecs.size(); ++i) {
+        // отрисовка ориентации маркеров
+        for (int i = 0; i < rvecs.size(); i++) {
             auto rvec = rvecs[i];
             auto tvec = tvecs[i];
             cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvec, tvec, 15);
+        }
+        cv::imshow("estimated ", outputImage);
+        cv::waitKey();
 
+        // точки в 3d для отрисовки кубиков
+        std::vector<std::vector<cv::Point3f>> cubeObjPoints;
+        for(size_t i = 0; i < markerIds.size(); i++) {
+            int id = markerIds[i];
+            int x = id % markersX;
+            int y = id / markersY;
+            std::vector<cv::Point3f> buf;
+            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*y, markerLength));
+            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*y, markerLength));
+            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*(y+1), markerLength));
+            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*(y+1), markerLength));
+            cubeObjPoints.push_back(buf);
+        }
+
+        // рисуем кубики
+        cv::Vec3d rvecBoard, tvecBoard;
+        cv::aruco::estimatePoseBoard(markerCorners, markerIds, board, cameraMatrix, distCoeffs, rvecBoard, tvecBoard);
+        for(size_t i = 0; i < markerIds.size(); i++) {
+            std::vector<cv::Point2f> buf;
+            cv::projectPoints(cubeObjPoints[i], rvecBoard, tvecBoard, cameraMatrix, distCoeffs, buf);
+            drawCube(outputImage, markerCorners[i], buf);
+            cv::imshow("estimated ", outputImage);
+            cv::waitKey();
         }
 
         cv::resize(outputImage, outputImage, cv::Size(), 2, 2);
