@@ -151,7 +151,11 @@ int main(int argc, char* argv[])
         if(argc == 1) {
             std::cout << "Enter path to video (or just '0', if you want to use web camera) and necessity to flip (                         '1') or not ('0') input video." << endl;
         } else {
-            markersVideo.open(argv[1]);
+            if(argv[1][0] == '0') {
+                markersVideo.open(0);
+            } else {
+                markersVideo.open(argv[1]);
+            }
             flipImage = atoi(argv[2]);
         }
 
