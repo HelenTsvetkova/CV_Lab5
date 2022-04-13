@@ -22,16 +22,11 @@ enum labPart {
     CALIBRATE_CAMERA
 };
 
-void drawCube(cv::Mat &outputImage, std::vector<cv::Point2f> lowerEdge, std::vector<cv::Point2f> upperEdge) {
-    cv::line(outputImage,lowerEdge[0], upperEdge[0], cv::Scalar(255, 0, 0), 2);
-    cv::line(outputImage,lowerEdge[1], upperEdge[1], cv::Scalar(255, 0, 0), 2);
-    cv::line(outputImage,lowerEdge[2], upperEdge[2], cv::Scalar(255, 0, 0), 2);
-    cv::line(outputImage,lowerEdge[3], upperEdge[3], cv::Scalar(255, 0, 0), 2);
-
-    cv::line(outputImage, upperEdge[0], upperEdge[1], cv::Scalar(0,0,255), 2);
-    cv::line(outputImage, upperEdge[1], upperEdge[2], cv::Scalar(0,0,255), 2);
-    cv::line(outputImage, upperEdge[2], upperEdge[3], cv::Scalar(0,0,255), 2);
-    cv::line(outputImage, upperEdge[3], upperEdge[0], cv::Scalar(0,0,255), 2);
+void drawEdges(cv::Mat &outputImage, std::vector<cv::Point2f> lowerEdge, std::vector<cv::Point2f> upperEdge) {
+    cv::line(outputImage,lowerEdge[0], upperEdge[0], cv::Scalar(255, 0, 0), 1.5);
+    cv::line(outputImage,lowerEdge[1], upperEdge[1], cv::Scalar(255, 0, 0), 1.5);
+    cv::line(outputImage,lowerEdge[2], upperEdge[2], cv::Scalar(255, 0, 0), 1.5);
+    cv::line(outputImage,lowerEdge[3], upperEdge[3], cv::Scalar(255, 0, 0), 1.5);
 }
 
 int main(int argc, char* argv[])
@@ -187,24 +182,30 @@ int main(int argc, char* argv[])
         for(size_t i = 0; i < markerIds.size(); i++) {
             int id = markerIds[i];
             int x = id % markersX;
-            int y = id / markersY;
+            int y = markersY - (id / markersY);
             std::vector<cv::Point3f> buf;
-            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*y, markerLength));
-            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*y, markerLength));
-            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*(y+1), markerLength));
             buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*(y+1), markerLength));
+            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*(y+1), markerLength));
+            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*y, markerLength));
+            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*y, markerLength));
             cubeObjPoints.push_back(buf);
         }
 
         // рисуем кубики
         cv::Vec3d rvecBoard, tvecBoard;
         cv::aruco::estimatePoseBoard(markerCorners, markerIds, board, cameraMatrix, distCoeffs, rvecBoard, tvecBoard);
+        cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvecBoard, tvecBoard, 50);
         for(size_t i = 0; i < markerIds.size(); i++) {
             std::vector<cv::Point2f> buf;
             cv::projectPoints(cubeObjPoints[i], rvecBoard, tvecBoard, cameraMatrix, distCoeffs, buf);
-            drawCube(outputImage, markerCorners[i], buf);
-            cv::imshow("estimated ", outputImage);
-            cv::waitKey();
+            drawEdges(outputImage, markerCorners[i], buf);
+        }
+
+        for(size_t i = 0; i < markerIds.size(); i++) {
+            std::vector<cv::Point2f> buf;
+            cv::projectPoints(cubeObjPoints[i], rvecBoard, tvecBoard, cameraMatrix, distCoeffs, buf);
+            cv::Rect rect = cv::boundingRect(buf);
+            cv::rectangle(outputImage, rect, cv::Scalar(0, 0, 256), 2);
         }
 
         cv::resize(outputImage, outputImage, cv::Size(), 2, 2);
