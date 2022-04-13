@@ -144,9 +144,17 @@ int main(int argc, char* argv[])
         fs["cameraMatrix"] >> cameraMatrix;
         fs["distCoeffs"] >> distCoeffs;
 
+        int flipImage = 0;
+
         // открываем видео
-        cv::VideoCapture markersVideo("../images/2022-04-13-230809.webm");
-//        cv::VideoCapture markersVideo("../images/2022-04-05-121756.webm");
+        cv::VideoCapture markersVideo;
+        if(argc == 1) {
+            std::cout << "Enter path to video (or just '0', if you want to use web camera) and necessity to flip (                         '1') or not ('0') input video." << endl;
+        } else {
+            markersVideo.open(argv[1]);
+            flipImage = atoi(argv[2]);
+        }
+
         if(!markersVideo.isOpened()){
             std::cout << "Error opening video." << endl;
             return 0;
@@ -154,14 +162,16 @@ int main(int argc, char* argv[])
 
         while(1) {
 
-            cv::Mat markersImage;
             cv::Mat inputImage;
-            markersVideo >> markersImage;
-            if (markersImage.empty()) {
+            markersVideo >> inputImage;
+            if (inputImage.empty()) {
                 break;
             }
 
-            cv::flip(markersImage, inputImage, 1);
+            if(flipImage) {
+                cv::Mat buf = inputImage.clone();
+                cv::flip(buf, inputImage, 1);
+            }
 
             // детектируем маркеры
             std::vector<int> markerIds;
