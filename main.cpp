@@ -29,6 +29,13 @@ void drawEdges(cv::Mat &outputImage, std::vector<cv::Point2f> lowerEdge, std::ve
     cv::line(outputImage,lowerEdge[3], upperEdge[3], cv::Scalar(255, 0, 0), 1.5);
 }
 
+void drawSquare(cv::Mat &outputImage, std::vector<cv::Point2f> squarePoints) {
+    cv::line(outputImage, squarePoints[0], squarePoints[1], cv::Scalar(0,0,255), 2);
+    cv::line(outputImage, squarePoints[1], squarePoints[2], cv::Scalar(0,0,255), 2);
+    cv::line(outputImage, squarePoints[2], squarePoints[3], cv::Scalar(0,0,255), 2);
+    cv::line(outputImage, squarePoints[3], squarePoints[0], cv::Scalar(0,0,255), 2);
+}
+
 int main(int argc, char* argv[])
 {
 
@@ -131,86 +138,99 @@ int main(int argc, char* argv[])
 
     case DETECT_MARKER:
     {
-
-        // входное изображение
-        if(argc == 1) {
-            std::cout << "Please enter input photo file path" << std::endl;
-            return 0;
-        }
-        std::string inputImagePath = argv[1];
-
-        cv::Mat inputImage = cv::imread(inputImagePath);
-        if(inputImage.empty()) {
-            std::cout << "Error with input image" << std::endl;
-            return 0;
-        }
-
-        // детектируем маркеры
-        std::vector<int> markerIds;
-        std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
-        cv::Ptr<cv::aruco::DetectorParameters> parameters = cv::aruco::DetectorParameters::create();
-        cv::aruco::detectMarkers(inputImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
-
-        // проверка детектированных маркеров
-        cv::Mat outputImage = inputImage.clone();
-
-        if(markerIds.size() > 0) {
-            cv::aruco::drawDetectedMarkers(outputImage, markerCorners, markerIds);
-        }
-        cv::imshow(" markers ", outputImage);
-        cv::waitKey();
-
-        // находим ориентацию маркеров
+        // загружаем параметры камеры
         cv::FileStorage fs("../camera.xml", cv::FileStorage::READ);
         cv::Mat cameraMatrix, distCoeffs;
         fs["cameraMatrix"] >> cameraMatrix;
         fs["distCoeffs"] >> distCoeffs;
-        std::vector<cv::Vec3d> rvecs, tvecs;
-        cv::aruco::estimatePoseSingleMarkers(markerCorners, markerLength, cameraMatrix, distCoeffs, rvecs, tvecs);
 
-        // отрисовка ориентации маркеров
-        for (int i = 0; i < rvecs.size(); i++) {
-            auto rvec = rvecs[i];
-            auto tvec = tvecs[i];
-            cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvec, tvec, 15);
-        }
-        cv::imshow("estimated ", outputImage);
-        cv::waitKey();
-
-        // точки в 3d для отрисовки кубиков
-        std::vector<std::vector<cv::Point3f>> cubeObjPoints;
-        for(size_t i = 0; i < markerIds.size(); i++) {
-            int id = markerIds[i];
-            int x = id % markersX;
-            int y = markersY - (id / markersY);
-            std::vector<cv::Point3f> buf;
-            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*(y+1), markerLength));
-            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*(y+1), markerLength));
-            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*y, markerLength));
-            buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*y, markerLength));
-            cubeObjPoints.push_back(buf);
+        // открываем видео
+        cv::VideoCapture markersVideo("../images/2022-04-13-230809.webm");
+//        cv::VideoCapture markersVideo("../images/2022-04-05-121756.webm");
+        if(!markersVideo.isOpened()){
+            std::cout << "Error opening video." << endl;
+            return 0;
         }
 
-        // рисуем кубики
-        cv::Vec3d rvecBoard, tvecBoard;
-        cv::aruco::estimatePoseBoard(markerCorners, markerIds, board, cameraMatrix, distCoeffs, rvecBoard, tvecBoard);
-        cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvecBoard, tvecBoard, 50);
-        for(size_t i = 0; i < markerIds.size(); i++) {
-            std::vector<cv::Point2f> buf;
-            cv::projectPoints(cubeObjPoints[i], rvecBoard, tvecBoard, cameraMatrix, distCoeffs, buf);
-            drawEdges(outputImage, markerCorners[i], buf);
-        }
+        while(1) {
 
-        for(size_t i = 0; i < markerIds.size(); i++) {
-            std::vector<cv::Point2f> buf;
-            cv::projectPoints(cubeObjPoints[i], rvecBoard, tvecBoard, cameraMatrix, distCoeffs, buf);
-            cv::Rect rect = cv::boundingRect(buf);
-            cv::rectangle(outputImage, rect, cv::Scalar(0, 0, 256), 2);
-        }
+            cv::Mat markersImage;
+            cv::Mat inputImage;
+            markersVideo >> markersImage;
+            if (markersImage.empty()) {
+                break;
+            }
 
-        cv::resize(outputImage, outputImage, cv::Size(), 2, 2);
-        cv::imshow("estimated ", outputImage);
-        cv::waitKey();
+            cv::flip(markersImage, inputImage, 1);
+
+            // детектируем маркеры
+            std::vector<int> markerIds;
+            std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
+            cv::Ptr<cv::aruco::DetectorParameters> parameters = cv::aruco::DetectorParameters::create();
+            cv::aruco::detectMarkers(inputImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
+
+            // проверка детектированных маркеров
+            cv::Mat outputImage = inputImage.clone();
+
+            if(markerIds.size() > 0) {
+                cv::aruco::drawDetectedMarkers(outputImage, markerCorners, markerIds);
+            } else {
+                cv::imshow("estimated ", outputImage);
+                char c = (char)cv::waitKey(10);
+                if(c == 27) {
+                    break;
+                }
+                continue;
+            }
+
+            // находим ориентацию маркеров
+            std::vector<cv::Vec3d> rvecs, tvecs;
+            cv::aruco::estimatePoseSingleMarkers(markerCorners, markerLength, cameraMatrix, distCoeffs, rvecs, tvecs);
+
+            // отрисовка ориентации маркеров
+            for (int i = 0; i < rvecs.size(); i++) {
+                auto rvec = rvecs[i];
+                auto tvec = tvecs[i];
+                cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvec, tvec, 15);
+            }
+
+            // точки в 3d для отрисовки кубиков
+            std::vector<std::vector<cv::Point3f>> cubeObjPoints;
+            for(size_t i = 0; i < markerIds.size(); i++) {
+                int id = markerIds[i];
+                int x = id % markersX;
+                int y = markersY - (id / markersY) - 1;
+                std::vector<cv::Point3f> buf;
+                buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*(y+1), markerLength));
+                buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*(y+1), markerLength));
+                buf.push_back(cv::Point3f(margins*(x+1) + markerLength*(x+1), margins*(y+1) + markerLength*y, markerLength));
+                buf.push_back(cv::Point3f(margins*(x+1) + markerLength*x, margins*(y+1) + markerLength*y, markerLength));
+                cubeObjPoints.push_back(buf);
+            }
+
+            // рисуем кубики
+            cv::Vec3d rvecBoard, tvecBoard;
+            cv::aruco::estimatePoseBoard(markerCorners, markerIds, board, cameraMatrix, distCoeffs, rvecBoard, tvecBoard);
+            cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvecBoard, tvecBoard, 50);
+            for(size_t i = 0; i < markerIds.size(); i++) {
+                std::vector<cv::Point2f> buf;
+                cv::projectPoints(cubeObjPoints[i], rvecBoard, tvecBoard, cameraMatrix, distCoeffs, buf);
+                drawEdges(outputImage, markerCorners[i], buf);
+            }
+
+            for(size_t i = 0; i < markerIds.size(); i++) {
+                std::vector<cv::Point2f> buf;
+                cv::projectPoints(cubeObjPoints[i], rvecBoard, tvecBoard, cameraMatrix, distCoeffs, buf);
+                drawSquare(outputImage, buf);
+            }
+
+            cv::resize(outputImage, outputImage, cv::Size(), 2, 2);
+            cv::imshow("estimated ", outputImage);
+            char c = (char)cv::waitKey(10);
+            if(c == 27) {
+                break;
+            }
+        }
 
         break;
     }
